@@ -8,7 +8,7 @@ resource "aws_vpc" "dev_vpc" {
   }
 }
 
-resource "aws_subnet" "dev_subnet" {
+resource "aws_subnet" "dev_public_subnet" {
   vpc_id                  = aws_vpc.dev_vpc.id
   cidr_block              = "10.123.1.0/24"
   map_public_ip_on_launch = true
@@ -41,7 +41,7 @@ resource "aws_route" "default_route" {
 }
 
 resource "aws_route_table_association" "dev_public_assoc" {
-  subnet_id      = aws_subnet.dev_subnet.id
+  subnet_id      = aws_subnet.dev_public_subnet.id
   route_table_id = aws_route_table.dev_public_rt.id
 }
 
@@ -67,7 +67,7 @@ resource "aws_security_group" "dev_sg" {
 
 resource "aws_key_pair" "dev_auth" {
     key_name = "dev_key"
-    public_key = file("${var.ssh_path}")
+    public_key = file("${var.ssh_public_path}")
 }
 
 resource "aws_instance" "dev_node" {
@@ -75,7 +75,7 @@ resource "aws_instance" "dev_node" {
     ami = data.aws_ami.server_ami.id
     key_name = aws_key_pair.dev_auth.key_name
     vpc_security_group_ids = [aws_security_group.dev_sg.id]
-    subnet_id = aws_subnet.dev_subnet.id
+    subnet_id = aws_subnet.dev_public_subnet.id
     user_data = file("userdata.tpl")
 
     root_block_device {
@@ -84,5 +84,14 @@ resource "aws_instance" "dev_node" {
 
     tags = {
         Name = "dev-node"
+    }
+
+    provisioner "local-exec" {
+        command = templatefile("${var.host_os}-ssh-config.tpl", {
+          hostname = self.public_ip
+          user = "ubuntu"
+          identityfile = var.ssh_private_path
+        })
+        interpreter = var.host_os == "windows" ? ["Powershell", "-Command"] : ["bash", "-c"]
     }
 }
